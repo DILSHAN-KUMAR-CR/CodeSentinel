@@ -1,19 +1,37 @@
-name: CodeSentinel Security Scan
+name: CodeSentinel Security CI
 
 on:
   push:
+    branches:
+      - main
   pull_request:
+    branches:
+      - main
 
 jobs:
   security-scan:
+    name: Security Scanner
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -r requirements.txt
-      - run: pytest
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: pip install -r requirements.txt
+
+      - name: Run scanner tests
+        working-directory: backend
+        run: pytest -v
+
+      - name: Scan changed Python files
+        working-directory: backend
+        run: python ci_scan.py
