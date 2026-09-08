@@ -1,166 +1,75 @@
-import React, { useState } from "react"
+import React, { useEffect, useState } from "react"
 import { createRoot } from "react-dom/client"
 import {
   AlertTriangle,
   Bug,
   GitPullRequest,
   Github,
+  History,
   Search,
   ShieldCheck,
 } from "lucide-react"
 import "./styles.css"
 
-const sample = `from flask import Flask
-import sqlite3
-
-app = Flask(__name__)
-
-password = "admin123"
-api_key = "sk_test_123456789"
-
-@app.route("/user")
-def user(user_id):
-    query = "SELECT * FROM users WHERE id=" + user_id
-    return eval(user_id)
-
-if password == "123456":
-    print("login")`
-
-function StatCard({ label, value, danger }) {
-  return (
-    <div className={`stat-card ${danger ? "danger" : ""}`}>
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
-  )
-}
-
-function FindingCard({ finding }) {
-  const severityClass = finding.severity.toLowerCase()
-
-  return (
-    <div className="finding-card">
-      <div className="finding-header">
-        <div>
-          <div className={`severity ${severityClass}`}>
-            {finding.severity}
-          </div>
-          <h3>{finding.vulnerability}</h3>
-        </div>
-        <span className="cwe">{finding.cwe || "N/A"}</span>
-      </div>
-
-      <div className="finding-meta">
-        Line {finding.line} · {finding.category}
-      </div>
-
-      <div className="code-block">
-        <code>{finding.code}</code>
-      </div>
-
-      <div className="finding-section">
-        <h4>Scanner Analysis</h4>
-        <p>{finding.description}</p>
-      </div>
-
-      <div className="finding-section">
-        <h4>Recommended Fix</h4>
-        <p>{finding.recommendation}</p>
-      </div>
-
-      {finding.ai_analysis && (
-        <div className="ai-box">
-          <div className="ai-title">
-            <ShieldCheck size={18} />
-            AI Security Analysis
-          </div>
-
-          <div className="finding-section">
-            <h4>Why is this vulnerable?</h4>
-            <p>{finding.ai_analysis.explanation}</p>
-          </div>
-
-          <div className="finding-section">
-            <h4>Attack Impact</h4>
-            <p>{finding.ai_analysis.attack_impact}</p>
-          </div>
-
-          <div className="finding-section">
-            <h4>Secure Fix</h4>
-            <p>{finding.ai_analysis.secure_fix}</p>
-          </div>
-
-          {finding.ai_analysis.fixed_code && (
-            <div className="finding-section">
-              <h4>AI-Generated Fixed Code</h4>
-              <div className="code-block">
-                <code>{finding.ai_analysis.fixed_code}</code>
-              </div>
-            </div>
-          )}
-
-          <div className="finding-section">
-            <h4>Developer Tip</h4>
-            <p>{finding.ai_analysis.developer_tip}</p>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function FindingList({ files }) {
-  return (
-    <div className="findings">
-      {files.map((file) =>
-        file.findings.map((finding) => (
-          <div key={`${file.path}-${finding.id}`}>
-            <div className="file-path-heading">
-              {file.path}
-            </div>
-            <FindingCard finding={finding} />
-          </div>
-        ))
-      )}
-    </div>
-  )
-}
+const API_BASE = "http://127.0.0.1:8000"
 
 function App() {
   const [mode, setMode] = useState("code")
-  const [code, setCode] = useState(sample)
+  const [code, setCode] = useState("")
   const [language, setLanguage] = useState("python")
   const [repositoryUrl, setRepositoryUrl] = useState("")
   const [pullRequestUrl, setPullRequestUrl] = useState("")
-  const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
+  const [history, setHistory] = useState([])
+  const [historyLoading, setHistoryLoading] = useState(false)
 
-  function switchMode(nextMode) {
-    setMode(nextMode)
-    setResult(null)
-    setError("")
+  const loadHistory = async () => {
+    try {
+      setHistoryLoading(true)
+
+      const response = await fetch(`${API_BASE}/history`)
+
+      if (!response.ok) {
+        throw new Error("Failed to load scan history.")
+      }
+
+      const data = await response.json()
+
+      setHistory(data.history || [])
+    } catch (historyError) {
+      setError(historyError.message)
+    } finally {
+      setHistoryLoading(false)
+    }
   }
 
-  async function scanCode() {
+  useEffect(() => {
+    loadHistory()
+  }, [])
+
+  const scanCode = async () => {
+    if (!code.trim()) {
+      setError("Enter source code before scanning.")
+      return
+    }
+
     setLoading(true)
     setError("")
     setResult(null)
 
     try {
-      const response = await fetch(
-        "http://127.0.0.1:8000/scan",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            code,
-            language,
-          }),
-        }
-      )
+      const response = await fetch(`${API_BASE}/scan`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          code,
+          language,
+        }),
+      })
 
       const data = await response.json()
 
@@ -174,14 +83,16 @@ function App() {
         type: "code",
         data,
       })
-    } catch (err) {
-      setError(err.message)
+
+      await loadHistory()
+    } catch (scanError) {
+      setError(scanError.message)
     } finally {
       setLoading(false)
     }
   }
 
-  async function scanRepository() {
+  const scanRepository = async () => {
     if (!repositoryUrl.trim()) {
       setError("Enter a GitHub repository URL.")
       return
@@ -193,7 +104,7 @@ function App() {
 
     try {
       const response = await fetch(
-        "http://127.0.0.1:8000/scan/github",
+        `${API_BASE}/scan/github`,
         {
           method: "POST",
           headers: {
@@ -209,7 +120,7 @@ function App() {
 
       if (!response.ok) {
         throw new Error(
-          data.detail || "GitHub scan failed."
+          data.detail || "Repository scan failed."
         )
       }
 
@@ -217,14 +128,16 @@ function App() {
         type: "github",
         data,
       })
-    } catch (err) {
-      setError(err.message)
+
+      await loadHistory()
+    } catch (scanError) {
+      setError(scanError.message)
     } finally {
       setLoading(false)
     }
   }
 
-  async function scanPullRequest() {
+  const scanPullRequest = async () => {
     if (!pullRequestUrl.trim()) {
       setError("Enter a GitHub Pull Request URL.")
       return
@@ -236,7 +149,7 @@ function App() {
 
     try {
       const response = await fetch(
-        "http://127.0.0.1:8000/scan/github/pr",
+        `${API_BASE}/scan/github/pr`,
         {
           method: "POST",
           headers: {
@@ -260,636 +173,766 @@ function App() {
         type: "pull-request",
         data,
       })
-    } catch (err) {
-      setError(err.message)
+
+      await loadHistory()
+    } catch (scanError) {
+      setError(scanError.message)
     } finally {
       setLoading(false)
     }
   }
 
-  const codeData =
-    result?.type === "code"
-      ? result.data
-      : null
+  const getScoreClass = (score) => {
+    if (score >= 80) {
+      return "score-good"
+    }
 
-  const githubData =
-    result?.type === "github"
-      ? result.data
-      : null
+    if (score >= 50) {
+      return "score-medium"
+    }
 
-  const pullRequestData =
-    result?.type === "pull-request"
-      ? result.data
-      : null
+    return "score-danger"
+  }
+
+  const formatDate = (value) => {
+    if (!value) {
+      return "Unknown"
+    }
+
+    return new Date(value).toLocaleString()
+  }
+
+  const formatScanType = (type) => {
+    if (type === "pull_request") {
+      return "Pull Request"
+    }
+
+    if (type === "repository") {
+      return "Repository"
+    }
+
+    return "Code"
+  }
+
+  const renderFinding = (finding, index) => {
+    const ai = finding.ai_analysis
+
+    return (
+      <div
+        className="finding-card"
+        key={`${finding.id}-${index}`}
+      >
+        <div className="finding-header">
+          <div>
+            <span
+              className={`severity severity-${finding.severity.toLowerCase()}`}
+            >
+              {finding.severity}
+            </span>
+
+            <h3>{finding.vulnerability}</h3>
+          </div>
+
+          <span className="finding-line">
+            Line {finding.line}
+          </span>
+        </div>
+
+        <div className="finding-code">
+          {finding.code}
+        </div>
+
+        <p>{finding.description}</p>
+
+        {finding.cwe && (
+          <div className="finding-meta">
+            {finding.cwe}
+          </div>
+        )}
+
+        <div className="recommendation">
+          <strong>Recommendation</strong>
+          <p>{finding.recommendation}</p>
+        </div>
+
+        {ai && (
+          <div className="ai-box">
+            <div className="ai-title">
+              <ShieldCheck size={18} />
+              AI Security Analysis
+            </div>
+
+            <div className="ai-section">
+              <strong>Explanation</strong>
+              <p>{ai.explanation}</p>
+            </div>
+
+            <div className="ai-section">
+              <strong>Attack Impact</strong>
+              <p>{ai.attack_impact}</p>
+            </div>
+
+            <div className="ai-section">
+              <strong>Secure Fix</strong>
+              <p>{ai.secure_fix}</p>
+            </div>
+
+            {ai.fixed_code && (
+              <div className="ai-section">
+                <strong>Fixed Code</strong>
+                <pre>{ai.fixed_code}</pre>
+              </div>
+            )}
+
+            <div className="ai-section">
+              <strong>Developer Tip</strong>
+              <p>{ai.developer_tip}</p>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  const renderCodeResults = (data) => (
+    <>
+      <div className="result-summary">
+        <div className="score-panel">
+          <span>Security Score</span>
+          <strong className={getScoreClass(data.score)}>
+            {data.score}
+          </strong>
+          <small>out of 100</small>
+        </div>
+
+        <div className="metric">
+          <span>Critical</span>
+          <strong>{data.summary.critical}</strong>
+        </div>
+
+        <div className="metric">
+          <span>High</span>
+          <strong>{data.summary.high}</strong>
+        </div>
+
+        <div className="metric">
+          <span>Medium</span>
+          <strong>{data.summary.medium}</strong>
+        </div>
+
+        <div className="metric">
+          <span>Low</span>
+          <strong>{data.summary.low}</strong>
+        </div>
+      </div>
+
+      <div className="results-heading">
+        <Bug size={20} />
+        <span>Security Findings</span>
+      </div>
+
+      {data.findings.length === 0 ? (
+        <div className="clean-result">
+          <ShieldCheck size={34} />
+          <h3>No vulnerabilities detected</h3>
+          <p>
+            The submitted code passed the current CodeSentinel
+            security rules.
+          </p>
+        </div>
+      ) : (
+        <div className="findings-list">
+          {data.findings.map(renderFinding)}
+        </div>
+      )}
+    </>
+  )
+
+  const renderRepositoryResults = (data) => (
+    <>
+      <div className="github-result-header">
+        <div>
+          <span className="eyebrow">
+            GITHUB REPOSITORY RESULTS
+          </span>
+
+          <h2>
+            {data.owner}/{data.repository}
+          </h2>
+        </div>
+
+        <Github size={30} />
+      </div>
+
+      <div className="result-summary">
+        <div className="metric">
+          <span>Files Scanned</span>
+          <strong>{data.files_scanned}</strong>
+        </div>
+
+        <div className="metric">
+          <span>Total Findings</span>
+          <strong>{data.total_findings}</strong>
+        </div>
+
+        <div className="metric">
+          <span>Critical</span>
+          <strong>{data.critical}</strong>
+        </div>
+
+        <div className="metric">
+          <span>High</span>
+          <strong>{data.high}</strong>
+        </div>
+
+        <div className="metric">
+          <span>Medium</span>
+          <strong>{data.medium}</strong>
+        </div>
+
+        <div className="metric">
+          <span>Low</span>
+          <strong>{data.low}</strong>
+        </div>
+      </div>
+
+      <div className="results-heading">
+        <Search size={20} />
+        <span>Scanned Files</span>
+      </div>
+
+      <div className="repository-files">
+        {data.files.map((file) => (
+          <div
+            className="repository-file"
+            key={file.path}
+          >
+            <div className="repository-file-header">
+              <strong>{file.path}</strong>
+
+              <span
+                className={getScoreClass(file.score)}
+              >
+                {file.score}/100
+              </span>
+            </div>
+
+            {file.error ? (
+              <p className="error-text">
+                {file.error}
+              </p>
+            ) : file.findings.length === 0 ? (
+              <p className="clean-file">
+                No vulnerabilities detected.
+              </p>
+            ) : (
+              <div className="findings-list">
+                {file.findings.map(renderFinding)}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </>
+  )
+
+  const renderPullRequestResults = (data) => (
+    <>
+      <div className="github-result-header">
+        <div>
+          <span className="eyebrow">
+            PULL REQUEST SECURITY RESULTS
+          </span>
+
+          <h2>
+            #{data.pull_number} {data.title}
+          </h2>
+
+          <p>
+            {data.owner}/{data.repository}
+          </p>
+        </div>
+
+        <GitPullRequest size={30} />
+      </div>
+
+      <div
+        className={`pr-state ${
+          data.security_gate_passed
+            ? "pr-state-passed"
+            : "pr-state-failed"
+        }`}
+      >
+        <ShieldCheck size={20} />
+
+        <div>
+          <strong>
+            Security Gate {data.security_gate}
+          </strong>
+
+          <span>
+            {data.security_gate_passed
+              ? "No critical or high severity vulnerabilities detected."
+              : "Critical or high severity vulnerabilities detected."}
+          </span>
+        </div>
+      </div>
+
+      <div className="result-summary">
+        <div className="score-panel">
+          <span>PR Security Score</span>
+          <strong
+            className={getScoreClass(
+              Math.min(
+                ...data.files.map(
+                  (file) => file.score
+                ),
+                100
+              )
+            )}
+          >
+            {Math.min(
+              ...data.files.map(
+                (file) => file.score
+              ),
+              100
+            )}
+          </strong>
+          <small>out of 100</small>
+        </div>
+
+        <div className="metric">
+          <span>Files Scanned</span>
+          <strong>{data.files_scanned}</strong>
+        </div>
+
+        <div className="metric">
+          <span>Critical</span>
+          <strong>{data.critical}</strong>
+        </div>
+
+        <div className="metric">
+          <span>High</span>
+          <strong>{data.high}</strong>
+        </div>
+
+        <div className="metric">
+          <span>Medium</span>
+          <strong>{data.medium}</strong>
+        </div>
+
+        <div className="metric">
+          <span>Low</span>
+          <strong>{data.low}</strong>
+        </div>
+
+        <div className="metric">
+          <span>Total</span>
+          <strong>{data.total_findings}</strong>
+        </div>
+      </div>
+
+      <div className="pr-summary">
+        <GitPullRequest size={18} />
+
+        <span>
+          Security analysis completed for this Pull Request.
+        </span>
+      </div>
+
+      <div className="results-heading">
+        <Search size={20} />
+        <span>Changed Files</span>
+      </div>
+
+      <div className="repository-files">
+        {data.files.map((file) => (
+          <div
+            className="repository-file"
+            key={file.path}
+          >
+            <div className="repository-file-header">
+              <strong>{file.path}</strong>
+
+              <span
+                className={getScoreClass(file.score)}
+              >
+                {file.score}/100
+              </span>
+            </div>
+
+            {file.error ? (
+              <p className="error-text">
+                {file.error}
+              </p>
+            ) : file.findings.length === 0 ? (
+              <p className="clean-file">
+                No vulnerabilities detected.
+              </p>
+            ) : (
+              <div className="findings-list">
+                {file.findings.map(renderFinding)}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </>
+  )
 
   return (
-    <div className="app">
+    <div className="app-shell">
       <header className="topbar">
         <div className="brand">
           <div className="brand-icon">
-            <ShieldCheck size={24} />
+            <ShieldCheck size={25} />
           </div>
 
           <div>
-            <h1>CodeSentinel</h1>
-            <span>AI-Powered Code Security</span>
+            <div className="brand-name">
+              CodeSentinel
+            </div>
+
+            <div className="brand-subtitle">
+              AI-powered code security
+            </div>
           </div>
         </div>
 
-        <div className="status">
-          <span className="status-dot" />
+        <div className="status-indicator">
+          <span />
           Security Engine Online
         </div>
       </header>
 
-      <main className="container">
+      <main className="main-content">
         <section className="hero">
-          <div>
-            <div className="eyebrow">
-              <ShieldCheck size={16} />
-              SECURE SOFTWARE DEVELOPMENT
-            </div>
+          <span className="eyebrow">
+            SECURITY ANALYSIS PLATFORM
+          </span>
 
-            <h2>
-              Find vulnerabilities before
-              <span> attackers do.</span>
-            </h2>
+          <h1>
+            Find vulnerabilities before
+            <span> attackers do.</span>
+          </h1>
 
-            <p>
-              Scan source code, GitHub repositories,
-              or Pull Requests and get AI-powered
-              security analysis and fixes.
-            </p>
-          </div>
+          <p>
+            Analyze source code, GitHub repositories, and Pull
+            Requests with static analysis and AI-powered security
+            intelligence.
+          </p>
         </section>
 
-        <div className="mode-switch">
-          <button
-            className={mode === "code" ? "active" : ""}
-            onClick={() => switchMode("code")}
-          >
-            <Search size={18} />
-            Code Scanner
-          </button>
-
-          <button
-            className={mode === "github" ? "active" : ""}
-            onClick={() => switchMode("github")}
-          >
-            <Github size={18} />
-            GitHub Scanner
-          </button>
-
-          <button
-            className={
-              mode === "pull-request"
-                ? "active"
-                : ""
-            }
-            onClick={() =>
-              switchMode("pull-request")
-            }
-          >
-            <GitPullRequest size={18} />
-            Pull Request
-          </button>
-        </div>
-
-        {mode === "code" && (
-          <section className="scanner-panel">
-            <div className="panel-header">
-              <div>
-                <span className="label">
-                  SOURCE CODE
-                </span>
-
-                <h3>Paste code to scan</h3>
-              </div>
-
-              <select
-                value={language}
-                onChange={(e) =>
-                  setLanguage(e.target.value)
-                }
-              >
-                <option value="python">
-                  Python
-                </option>
-              </select>
-            </div>
-
-            <textarea
-              value={code}
-              onChange={(e) =>
-                setCode(e.target.value)
+        <section className="scanner-card">
+          <div className="mode-switch">
+            <button
+              className={
+                mode === "code"
+                  ? "mode-button active"
+                  : "mode-button"
               }
-              spellCheck="false"
-            />
+              onClick={() => {
+                setMode("code")
+                setResult(null)
+                setError("")
+              }}
+            >
+              <Search size={17} />
+              Code
+            </button>
 
             <button
-              className="primary-button"
-              onClick={scanCode}
-              disabled={loading}
+              className={
+                mode === "github"
+                  ? "mode-button active"
+                  : "mode-button"
+              }
+              onClick={() => {
+                setMode("github")
+                setResult(null)
+                setError("")
+              }}
             >
-              <Search size={18} />
-
-              {loading
-                ? "Scanning..."
-                : "Scan Code"}
+              <Github size={17} />
+              GitHub Repository
             </button>
-          </section>
-        )}
 
-        {mode === "github" && (
-          <section className="scanner-panel github-panel">
-            <div className="github-heading">
-              <div className="github-icon">
-                <Github size={30} />
+            <button
+              className={
+                mode === "pull-request"
+                  ? "mode-button active"
+                  : "mode-button"
+              }
+              onClick={() => {
+                setMode("pull-request")
+                setResult(null)
+                setError("")
+              }}
+            >
+              <GitPullRequest size={17} />
+              Pull Request
+            </button>
+          </div>
+
+          {mode === "code" && (
+            <>
+              <div className="input-toolbar">
+                <label htmlFor="language">
+                  Language
+                </label>
+
+                <select
+                  id="language"
+                  value={language}
+                  onChange={(event) =>
+                    setLanguage(event.target.value)
+                  }
+                >
+                  <option value="python">
+                    Python
+                  </option>
+                </select>
               </div>
 
+              <textarea
+                className="code-editor"
+                value={code}
+                onChange={(event) =>
+                  setCode(event.target.value)
+                }
+                placeholder="Paste your source code here..."
+                spellCheck="false"
+              />
+
+              <button
+                className="scan-button"
+                onClick={scanCode}
+                disabled={loading}
+              >
+                <ShieldCheck size={18} />
+
+                {loading
+                  ? "Scanning..."
+                  : "Scan Code"}
+              </button>
+            </>
+          )}
+
+          {mode === "github" && (
+            <div className="github-panel">
+              <Github size={36} />
+
               <div>
-                <span className="label">
+                <span className="eyebrow">
                   GITHUB REPOSITORY
                 </span>
 
-                <h3>
-                  Scan an entire repository
-                </h3>
+                <h2>
+                  Scan a public repository
+                </h2>
 
                 <p>
-                  Analyze public Python repositories
-                  for security vulnerabilities.
+                  Analyze Python files in a public GitHub
+                  repository.
                 </p>
               </div>
-            </div>
-
-            <label>Repository URL</label>
-
-            <div className="github-input">
-              <Github size={20} />
 
               <input
+                className="github-input"
                 value={repositoryUrl}
-                onChange={(e) =>
-                  setRepositoryUrl(e.target.value)
+                onChange={(event) =>
+                  setRepositoryUrl(event.target.value)
                 }
                 placeholder="https://github.com/owner/repository"
               />
+
+              <button
+                className="scan-button"
+                onClick={scanRepository}
+                disabled={loading}
+              >
+                <Github size={18} />
+
+                {loading
+                  ? "Scanning Repository..."
+                  : "Scan Repository"}
+              </button>
             </div>
+          )}
 
-            <button
-              className="primary-button"
-              onClick={scanRepository}
-              disabled={loading}
-            >
-              <ShieldCheck size={18} />
-
-              {loading
-                ? "Scanning Repository..."
-                : "Scan Repository"}
-            </button>
-          </section>
-        )}
-
-        {mode === "pull-request" && (
-          <section className="scanner-panel github-panel">
-            <div className="github-heading">
-              <div className="github-icon">
-                <GitPullRequest size={30} />
-              </div>
+          {mode === "pull-request" && (
+            <div className="github-panel">
+              <GitPullRequest size={36} />
 
               <div>
-                <span className="label">
+                <span className="eyebrow">
                   GITHUB PULL REQUEST
                 </span>
 
-                <h3>
+                <h2>
                   Scan code before it is merged
-                </h3>
+                </h2>
 
                 <p>
-                  Analyze changed Python files in a
-                  public GitHub Pull Request.
+                  Analyze changed Python files in a public
+                  GitHub Pull Request.
                 </p>
               </div>
-            </div>
-
-            <label>
-              Pull Request URL
-            </label>
-
-            <div className="github-input">
-              <GitPullRequest size={20} />
 
               <input
+                className="github-input"
                 value={pullRequestUrl}
-                onChange={(e) =>
-                  setPullRequestUrl(e.target.value)
+                onChange={(event) =>
+                  setPullRequestUrl(event.target.value)
                 }
                 placeholder="https://github.com/owner/repository/pull/1"
               />
+
+              <button
+                className="scan-button"
+                onClick={scanPullRequest}
+                disabled={loading}
+              >
+                <GitPullRequest size={18} />
+
+                {loading
+                  ? "Scanning Pull Request..."
+                  : "Scan Pull Request"}
+              </button>
             </div>
-
-            <button
-              className="primary-button"
-              onClick={scanPullRequest}
-              disabled={loading}
-            >
-              <ShieldCheck size={18} />
-
-              {loading
-                ? "Scanning Pull Request..."
-                : "Scan Pull Request"}
-            </button>
-          </section>
-        )}
+          )}
+        </section>
 
         {error && (
-          <div className="error-box">
+          <div className="error-banner">
             <AlertTriangle size={18} />
             {error}
           </div>
         )}
 
-        {codeData && (
-          <section className="results">
-            <div className="results-header">
-              <div>
-                <span className="label">
-                  SCAN RESULTS
-                </span>
+        {result && (
+          <section className="results-section">
+            {result.type === "code" &&
+              renderCodeResults(result.data)}
 
-                <h2>Security Report</h2>
-              </div>
+            {result.type === "github" &&
+              renderRepositoryResults(result.data)}
 
-              <div className="score">
-                <strong>
-                  {codeData.score}
-                </strong>
-
-                <span>/100</span>
-
-                <small>
-                  Security Score
-                </small>
-              </div>
-            </div>
-
-            <div className="stats">
-              <StatCard
-                label="Critical"
-                value={codeData.summary.critical}
-                danger
-              />
-
-              <StatCard
-                label="High"
-                value={codeData.summary.high}
-                danger
-              />
-
-              <StatCard
-                label="Medium"
-                value={codeData.summary.medium}
-              />
-
-              <StatCard
-                label="Low"
-                value={codeData.summary.low}
-              />
-
-              <StatCard
-                label="Total"
-                value={codeData.summary.total}
-              />
-            </div>
-
-            {codeData.ai_enabled && (
-              <div className="ai-status">
-                <ShieldCheck size={17} />
-                AI analysis enabled
-              </div>
-            )}
-
-            <div className="findings">
-              {codeData.findings.length === 0 ? (
-                <div className="empty-state">
-                  <ShieldCheck size={42} />
-
-                  <h3>
-                    No vulnerabilities found
-                  </h3>
-
-                  <p>
-                    CodeSentinel did not detect any
-                    supported security issues.
-                  </p>
-                </div>
-              ) : (
-                codeData.findings.map(
-                  (finding) => (
-                    <FindingCard
-                      key={finding.id}
-                      finding={finding}
-                    />
-                  )
-                )
-              )}
-            </div>
+            {result.type === "pull-request" &&
+              renderPullRequestResults(result.data)}
           </section>
         )}
 
-        {githubData && (
-          <section className="results">
-            <div className="results-header">
-              <div>
-                <span className="label">
-                  GITHUB SCAN RESULTS
-                </span>
+        <section className="history-section">
+          <div className="history-header">
+            <div>
+              <span className="eyebrow">
+                SECURITY ACTIVITY
+              </span>
 
-                <h2>
-                  {githubData.owner}/
-                  {githubData.repository}
-                </h2>
-
-                <p>
-                  {githubData.files_scanned} Python
-                  files scanned
-                </p>
-              </div>
-
-              <div className="repo-score">
-                <strong>
-                  {githubData.total_findings === 0
-                    ? 100
-                    : 0}
-                </strong>
-
-                <span>/100</span>
-
-                <small>
-                  Repository Score
-                </small>
-              </div>
+              <h2>
+                <History size={22} />
+                Scan History
+              </h2>
             </div>
 
-            <div className="stats">
-              <StatCard
-                label="Critical"
-                value={githubData.critical}
-                danger
-              />
+            <button
+              className="history-refresh"
+              onClick={loadHistory}
+              disabled={historyLoading}
+            >
+              {historyLoading
+                ? "Loading..."
+                : "Refresh"}
+            </button>
+          </div>
 
-              <StatCard
-                label="High"
-                value={githubData.high}
-                danger
-              />
-
-              <StatCard
-                label="Medium"
-                value={githubData.medium}
-              />
-
-              <StatCard
-                label="Low"
-                value={githubData.low}
-              />
-
-              <StatCard
-                label="Total"
-                value={githubData.total_findings}
-              />
+          {historyLoading && history.length === 0 ? (
+            <div className="history-empty">
+              Loading scan history...
             </div>
-
-            <div className="repository-files">
-              {githubData.files.map((file) => (
-                <div
-                  className="repository-file"
-                  key={file.path}
-                >
-                  <div className="file-info">
-                    <div className="file-icon">
-                      {file.findings.length > 0 ? (
-                        <Bug size={18} />
-                      ) : (
-                        <ShieldCheck size={18} />
-                      )}
-                    </div>
-
-                    <div>
-                      <h3>{file.path}</h3>
-
-                      <span>
-                        {file.findings.length === 0
-                          ? "No vulnerabilities detected"
-                          : `${file.findings.length} finding${
-                              file.findings.length >
-                              1
-                                ? "s"
-                                : ""
-                            }`}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div
-                    className={`file-score ${
-                      file.score < 70
-                        ? "bad"
-                        : file.score < 90
-                        ? "warning"
-                        : "good"
-                    }`}
-                  >
-                    {file.score}/100
-                  </div>
-                </div>
-              ))}
+          ) : history.length === 0 ? (
+            <div className="history-empty">
+              <History size={32} />
+              <h3>No scans yet</h3>
+              <p>
+                Completed scans will appear here.
+              </p>
             </div>
+          ) : (
+            <div className="history-table-wrapper">
+              <table className="history-table">
+                <thead>
+                  <tr>
+                    <th>Type</th>
+                    <th>Repository</th>
+                    <th>Score</th>
+                    <th>Critical</th>
+                    <th>High</th>
+                    <th>Medium</th>
+                    <th>Low</th>
+                    <th>Findings</th>
+                    <th>Date</th>
+                  </tr>
+                </thead>
 
-            {githubData.total_findings > 0 && (
-              <FindingList
-                files={githubData.files}
-              />
-            )}
-
-            {githubData.total_findings === 0 && (
-              <div className="empty-state">
-                <ShieldCheck size={42} />
-
-                <h3>
-                  Repository looks secure
-                </h3>
-
-                <p>
-                  No supported security
-                  vulnerabilities were detected
-                  in the scanned files.
-                </p>
-              </div>
-            )}
-          </section>
-        )}
-
-        {pullRequestData && (
-          <section className="results">
-            <div className="results-header">
-              <div>
-                <span className="label">
-                  PULL REQUEST SECURITY RESULTS
-                </span>
-
-                <h2>
-                  #{pullRequestData.pull_number}{" "}
-                  {pullRequestData.title}
-                </h2>
-
-                <p>
-                  {pullRequestData.owner}/
-                  {pullRequestData.repository}
-                </p>
-
-                <div className="pr-state">
-                  {pullRequestData.state}
-                </div>
-              </div>
-
-              <div className="repo-score">
-                <strong>
-                  {pullRequestData.total_findings ===
-                  0
-                    ? 100
-                    : 0}
-                </strong>
-
-                <span>/100</span>
-
-                <small>
-                  PR Security Score
-                </small>
-              </div>
-            </div>
-
-            <div className="stats">
-              <StatCard
-                label="Critical"
-                value={pullRequestData.critical}
-                danger
-              />
-
-              <StatCard
-                label="High"
-                value={pullRequestData.high}
-                danger
-              />
-
-              <StatCard
-                label="Medium"
-                value={pullRequestData.medium}
-              />
-
-              <StatCard
-                label="Low"
-                value={pullRequestData.low}
-              />
-
-              <StatCard
-                label="Total"
-                value={
-                  pullRequestData.total_findings
-                }
-              />
-            </div>
-
-            <div className="pr-summary">
-              <GitPullRequest size={20} />
-
-              <div>
-                <strong>
-                  {pullRequestData.files_scanned}{" "}
-                  changed Python files scanned
-                </strong>
-
-                <span>
-                  Security analysis completed for
-                  this Pull Request.
-                </span>
-              </div>
-            </div>
-
-            <div className="repository-files">
-              {pullRequestData.files.map(
-                (file) => (
-                  <div
-                    className="repository-file"
-                    key={file.path}
-                  >
-                    <div className="file-info">
-                      <div className="file-icon">
-                        {file.findings.length > 0 ? (
-                          <Bug size={18} />
-                        ) : (
-                          <ShieldCheck size={18} />
-                        )}
-                      </div>
-
-                      <div>
-                        <h3>{file.path}</h3>
-
-                        <span>
-                          {file.findings.length ===
-                          0
-                            ? "No vulnerabilities detected"
-                            : `${file.findings.length} finding${
-                                file.findings.length >
-                                1
-                                  ? "s"
-                                  : ""
-                              }`}
+                <tbody>
+                  {history.map((item) => (
+                    <tr key={item.id}>
+                      <td>
+                        <span className="history-type">
+                          {formatScanType(
+                            item.scan_type
+                          )}
                         </span>
-                      </div>
-                    </div>
+                      </td>
 
-                    <div
-                      className={`file-score ${
-                        file.score < 70
-                          ? "bad"
-                          : file.score < 90
-                          ? "warning"
-                          : "good"
-                      }`}
-                    >
-                      {file.score}/100
-                    </div>
-                  </div>
-                )
-              )}
+                      <td>
+                        {item.repository || "Local code"}
+                      </td>
+
+                      <td>
+                        <strong
+                          className={getScoreClass(
+                            item.score
+                          )}
+                        >
+                          {item.score}
+                        </strong>
+                      </td>
+
+                      <td className="severity-cell">
+                        {item.critical}
+                      </td>
+
+                      <td className="severity-cell">
+                        {item.high}
+                      </td>
+
+                      <td className="severity-cell">
+                        {item.medium}
+                      </td>
+
+                      <td className="severity-cell">
+                        {item.low}
+                      </td>
+
+                      <td>
+                        {item.total_findings}
+                      </td>
+
+                      <td>
+                        {formatDate(
+                          item.created_at
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-
-            {pullRequestData.total_findings > 0 && (
-              <FindingList
-                files={pullRequestData.files}
-              />
-            )}
-
-            {pullRequestData.total_findings === 0 && (
-              <div className="empty-state">
-                <ShieldCheck size={42} />
-
-                <h3>
-                  Pull Request looks secure
-                </h3>
-
-                <p>
-                  No supported security
-                  vulnerabilities were detected
-                  in the changed Python files.
-                </p>
-              </div>
-            )}
-          </section>
-        )}
+          )}
+        </section>
       </main>
     </div>
   )
@@ -897,4 +940,6 @@ function App() {
 
 createRoot(
   document.getElementById("root")
-).render(<App />)
+).render(
+  <App />
+)
