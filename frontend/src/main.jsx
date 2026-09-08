@@ -11,7 +11,8 @@ import {
 } from "lucide-react"
 import "./styles.css"
 
-const API_BASE = "http://127.0.0.1:8000"
+const API_BASE =
+  import.meta.env.VITE_API_URL || "http://127.0.0.1:8000"
 
 function App() {
   const [mode, setMode] = useState("code")
@@ -436,149 +437,149 @@ function App() {
     </>
   )
 
-  const renderPullRequestResults = (data) => (
-    <>
-      <div className="github-result-header">
-        <div>
-          <span className="eyebrow">
-            PULL REQUEST SECURITY RESULTS
-          </span>
+  const renderPullRequestResults = (data) => {
+    const prScore = data.files.length
+      ? Math.min(
+          ...data.files.map(
+            (file) => file.score
+          )
+        )
+      : 100
 
-          <h2>
-            #{data.pull_number} {data.title}
-          </h2>
+    return (
+      <>
+        <div className="github-result-header">
+          <div>
+            <span className="eyebrow">
+              PULL REQUEST SECURITY RESULTS
+            </span>
 
-          <p>
-            {data.owner}/{data.repository}
-          </p>
+            <h2>
+              #{data.pull_number} {data.title}
+            </h2>
+
+            <p>
+              {data.owner}/{data.repository}
+            </p>
+          </div>
+
+          <GitPullRequest size={30} />
         </div>
 
-        <GitPullRequest size={30} />
-      </div>
+        <div
+          className={`pr-state ${
+            data.security_gate_passed
+              ? "pr-state-passed"
+              : "pr-state-failed"
+          }`}
+        >
+          <ShieldCheck size={20} />
 
-      <div
-        className={`pr-state ${
-          data.security_gate_passed
-            ? "pr-state-passed"
-            : "pr-state-failed"
-        }`}
-      >
-        <ShieldCheck size={20} />
+          <div>
+            <strong>
+              Security Gate {data.security_gate}
+            </strong>
 
-        <div>
-          <strong>
-            Security Gate {data.security_gate}
-          </strong>
+            <span>
+              {data.security_gate_passed
+                ? "No critical or high severity vulnerabilities detected."
+                : "Critical or high severity vulnerabilities detected."}
+            </span>
+          </div>
+        </div>
+
+        <div className="result-summary">
+          <div className="score-panel">
+            <span>PR Security Score</span>
+
+            <strong
+              className={getScoreClass(prScore)}
+            >
+              {prScore}
+            </strong>
+
+            <small>out of 100</small>
+          </div>
+
+          <div className="metric">
+            <span>Files Scanned</span>
+            <strong>{data.files_scanned}</strong>
+          </div>
+
+          <div className="metric">
+            <span>Critical</span>
+            <strong>{data.critical}</strong>
+          </div>
+
+          <div className="metric">
+            <span>High</span>
+            <strong>{data.high}</strong>
+          </div>
+
+          <div className="metric">
+            <span>Medium</span>
+            <strong>{data.medium}</strong>
+          </div>
+
+          <div className="metric">
+            <span>Low</span>
+            <strong>{data.low}</strong>
+          </div>
+
+          <div className="metric">
+            <span>Total</span>
+            <strong>{data.total_findings}</strong>
+          </div>
+        </div>
+
+        <div className="pr-summary">
+          <GitPullRequest size={18} />
 
           <span>
-            {data.security_gate_passed
-              ? "No critical or high severity vulnerabilities detected."
-              : "Critical or high severity vulnerabilities detected."}
+            Security analysis completed for this Pull Request.
           </span>
         </div>
-      </div>
 
-      <div className="result-summary">
-        <div className="score-panel">
-          <span>PR Security Score</span>
-          <strong
-            className={getScoreClass(
-              Math.min(
-                ...data.files.map(
-                  (file) => file.score
-                ),
-                100
-              )
-            )}
-          >
-            {Math.min(
-              ...data.files.map(
-                (file) => file.score
-              ),
-              100
-            )}
-          </strong>
-          <small>out of 100</small>
+        <div className="results-heading">
+          <Search size={20} />
+          <span>Changed Files</span>
         </div>
 
-        <div className="metric">
-          <span>Files Scanned</span>
-          <strong>{data.files_scanned}</strong>
-        </div>
+        <div className="repository-files">
+          {data.files.map((file) => (
+            <div
+              className="repository-file"
+              key={file.path}
+            >
+              <div className="repository-file-header">
+                <strong>{file.path}</strong>
 
-        <div className="metric">
-          <span>Critical</span>
-          <strong>{data.critical}</strong>
-        </div>
-
-        <div className="metric">
-          <span>High</span>
-          <strong>{data.high}</strong>
-        </div>
-
-        <div className="metric">
-          <span>Medium</span>
-          <strong>{data.medium}</strong>
-        </div>
-
-        <div className="metric">
-          <span>Low</span>
-          <strong>{data.low}</strong>
-        </div>
-
-        <div className="metric">
-          <span>Total</span>
-          <strong>{data.total_findings}</strong>
-        </div>
-      </div>
-
-      <div className="pr-summary">
-        <GitPullRequest size={18} />
-
-        <span>
-          Security analysis completed for this Pull Request.
-        </span>
-      </div>
-
-      <div className="results-heading">
-        <Search size={20} />
-        <span>Changed Files</span>
-      </div>
-
-      <div className="repository-files">
-        {data.files.map((file) => (
-          <div
-            className="repository-file"
-            key={file.path}
-          >
-            <div className="repository-file-header">
-              <strong>{file.path}</strong>
-
-              <span
-                className={getScoreClass(file.score)}
-              >
-                {file.score}/100
-              </span>
-            </div>
-
-            {file.error ? (
-              <p className="error-text">
-                {file.error}
-              </p>
-            ) : file.findings.length === 0 ? (
-              <p className="clean-file">
-                No vulnerabilities detected.
-              </p>
-            ) : (
-              <div className="findings-list">
-                {file.findings.map(renderFinding)}
+                <span
+                  className={getScoreClass(file.score)}
+                >
+                  {file.score}/100
+                </span>
               </div>
-            )}
-          </div>
-        ))}
-      </div>
-    </>
-  )
+
+              {file.error ? (
+                <p className="error-text">
+                  {file.error}
+                </p>
+              ) : file.findings.length === 0 ? (
+                <p className="clean-file">
+                  No vulnerabilities detected.
+                </p>
+              ) : (
+                <div className="findings-list">
+                  {file.findings.map(renderFinding)}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </>
+    )
+  }
 
   return (
     <div className="app-shell">
