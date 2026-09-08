@@ -5,3 +5,4 @@ pytest
 openai
 python-dotenv
 requests
+pymongo

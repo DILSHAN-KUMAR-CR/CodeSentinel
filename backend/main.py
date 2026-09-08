@@ -5,7 +5,10 @@ from ai_analyzer import analyze_finding
 from ai_analyzer import analyze_findings
 from github_pr_scanner import scan_pull_request
 from github_scanner import scan_repository_files
+from history import get_scan_history
+from history import save_scan_history
 from models import (
+    Finding,
     GitHubPullRequestScanRequest,
     GitHubPullRequestScanResponse,
     GitHubScanRequest,
@@ -18,14 +21,17 @@ from scanner import scan_code
 
 app = FastAPI(
     title="CodeSentinel API",
-    version="1.5.0"
+    version="1.6.1"
 )
 
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173"
+    ],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -37,6 +43,20 @@ def health():
         "status": "ok",
         "service": "codesentinel"
     }
+
+
+@app.get("/history")
+def history():
+    try:
+        return {
+            "history": get_scan_history()
+        }
+
+    except Exception as error:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to load scan history: {error}"
+        )
 
 
 @app.post(
@@ -67,13 +87,47 @@ def scan(request: ScanRequest):
             request.language
         )
 
-        result.findings = ai_findings
+        result.findings = [
+            Finding(**finding)
+            for finding in ai_findings
+        ]
+
         result.ai_enabled = True
         result.ai_error = None
 
     except Exception as error:
         result.ai_enabled = False
         result.ai_error = str(error)
+
+    severity_counts = {
+        "CRITICAL": 0,
+        "HIGH": 0,
+        "MEDIUM": 0,
+        "LOW": 0
+    }
+
+    for finding in result.findings:
+        severity = finding.severity
+
+        if severity in severity_counts:
+            severity_counts[severity] += 1
+
+    try:
+        save_scan_history(
+            scan_type="code",
+            score=result.score,
+            critical=severity_counts["CRITICAL"],
+            high=severity_counts["HIGH"],
+            medium=severity_counts["MEDIUM"],
+            low=severity_counts["LOW"],
+            total_findings=len(result.findings)
+        )
+
+    except Exception as error:
+        result.ai_error = (
+            result.ai_error
+            or f"History save failed: {error}"
+        )
 
     return result
 
@@ -148,6 +202,30 @@ def scan_github(request: GitHubScanRequest):
                 medium += 1
             elif severity == "LOW":
                 low += 1
+
+    try:
+        save_scan_history(
+            scan_type="repository",
+            score=min(
+                [
+                    file["score"]
+                    for file in repository_result["files"]
+                ],
+                default=100
+            ),
+            critical=critical,
+            high=high,
+            medium=medium,
+            low=low,
+            total_findings=total_findings,
+            repository=(
+                f"{repository_result['owner']}/"
+                f"{repository_result['repository']}"
+            )
+        )
+
+    except Exception:
+        pass
 
     return {
         "owner": repository_result["owner"],
@@ -252,6 +330,31 @@ def scan_github_pull_request(
         if security_gate_passed
         else "FAILED"
     )
+
+    try:
+        save_scan_history(
+            scan_type="pull_request",
+            score=min(
+                [
+                    file["score"]
+                    for file in pull_request_result["files"]
+                ],
+                default=100
+            ),
+            critical=critical,
+            high=high,
+            medium=medium,
+            low=low,
+            total_findings=total_findings,
+            repository=(
+                f"{pull_request_result['owner']}/"
+                f"{pull_request_result['repository']}"
+            ),
+            pull_request=pull_request_result["pull_number"]
+        )
+
+    except Exception:
+        pass
 
     return {
         "owner": pull_request_result["owner"],
